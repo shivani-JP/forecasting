@@ -1,0 +1,474 @@
+---
+title: "forecasting_coursework"
+author: '36226843'
+date: "2023-02-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(forecast)
+library(imputeTS)
+library(tseries)
+library(lubridate)
+library(outliers)
+library(ggplot2)
+library(dplyr)
+library(zoo)
+library(seasonal)
+library(tsutils)
+library(xts)
+library(Kendall)
+library(smooth)
+library(data.table)
+```
+
+```{r cars}
+#Reading the data set
+dataset <- read.csv("forecasting_data.csv")
+colnames(dataset) <- c('date','values')
+dataset$dateformat <- dmy(dataset$date)
+
+dataset
+```
+
+```{r}
+#Imputing the missing values 
+dataset$values_imp <- na_interpolation(dataset$values,option = "linear")
+```
+
+
+```{r}
+#For data aggregation into weekly and monthly
+dataset$date <- as.Date(dataset$date, format="%d-%b-%y")
+dataset$year_month <- format(dataset$date, "%Y-%m")
+dataset$week <- week(dataset$date)
+dataset$year <- year(dataset$date)
+
+data_new <- dataset
+
+#monthly aggregation 
+month_aggr <- data_new %>%
+  group_by(year_month) %>% 
+  summarize(value = sum(values)) %>% 
+  #mutate(value_filled = na.fill(value, 0)) %>% 
+  as.data.frame()
+
+week_aggr <- data_new %>%
+  #na.omit() %>%  # Aggregate data
+  group_by( year, week) %>%
+  summarize(value = sum(values)) %>% 
+  #mutate(value_filled = na.fill(value, 0)) %>% 
+  as.data.frame()
+
+week_aggr = transform(week_aggr,year_week=interaction(year,week,sep='-'))
+week_aggr = week_aggr %>% 
+            select(-c(week, year))
+``` 
+
+
+```{r}
+# Create a time series object
+dataset$daily.ts <- ts(dataset$values, frequency = 365.25, start = c(1996, 77))
+
+#create a time series for nov data 
+daily.ts.nov <- ts(dataset$values, frequency = 365.25, start = c(1996, 304), end = c(1996, 336))
+
+
+```
+
+```{r}
+#create a time series for monthly data
+daily.ts.monthly <- ts(month_aggr$value, frequency = 12, start = c(1996, 3), end = c(1998, 4))
+```
+
+```{r}
+#Create a time series for weekly data 
+daily.ts.weekly <- ts(week_aggr$value, frequency = 53, start = c(1996, 12), end = c(1998, 12))
+```
+
+
+```{r}
+#check for missing values 
+sum(is.na(daily.ts.weekly))
+sum(is.na(daily.ts.monthly))
+```
+
+
+```{r}
+
+#Imputing missing values using na_interpolation
+dataset$ts_imp <- na_interpolation(dataset$daily.ts,option = "linear")
+daily.ts.weekly_imp <- na_interpolation(daily.ts.weekly, option = "linear")
+daily.ts.monthly_imp <- na_interpolation(daily.ts.monthly, option = "linear")
+daily.ts.nov_imp <- na_interpolation(daily.ts.nov, option = "linear")
+```
+
+```{r}
+#ploting thee graph with imputed means 
+ggplot_na_imputations(dataset$daily.ts,dataset$ts_imp)
+```
+
+```{r}
+# Plot the daily time series with grid and border
+plot(dataset$ts_imp, pch = 16, frame = FALSE, col = "#2E9FDF", 
+     panel.grid.major = element_line(color = "gray80", size = 0.5, linetype = "dotted"),
+     xlab = "Time", ylab = "Values")
+
+```
+
+
+```{r}
+#plotting the graph for nov data 
+plot(daily.ts.nov_imp)
+```
+
+```{r}
+#ploting the monthly time series 
+plot(daily.ts.monthly_imp)
+
+kpss.test(daily.ts.monthly_imp)
+adf.test(daily.ts.monthly_imp)
+pp.test(daily.ts.monthly_imp)
+
+```
+
+
+```{r}
+#Statistical test for monthly data 
+kpss.test(daily.ts.monthly_imp)
+adf.test(daily.ts.monthly_imp)
+pp.test(daily.ts.monthly_imp)
+
+#Statistical test for weekly data 
+kpss.test(daily.ts.weekly_imp)
+adf.test(daily.ts.weekly_imp)
+pp.test(daily.ts.weekly_imp)
+
+
+```
+
+
+```{r}
+#seasplot for weekly and monthly data 
+seasplot(daily.ts.weekly_imp, m= 52)
+seasplot(daily.ts.monthly_imp, m= 22)
+
+```
+
+```{r}
+#seasplots for daily data 
+ts_lags(dataset$ts_imp, lags = c(7))
+seasplot(dataset$ts_imp, m= 7)
+seasplot(dataset$ts_imp, m= 7,outplot =2 )
+
+```
+
+```{r}
+#Statistical test for daily data 
+tsdisplay(dataset$ts_imp)
+
+kpss.test(dataset$ts_imp)
+adf.test(dataset$ts_imp)
+pp.test(dataset$ts_imp)
+
+#trend test 
+SeasonalMannKendall(as.ts(dataset$values_imp))
+cox.stuart.test(dataset$ts_imp)
+```
+
+
+```{r}
+# Apply windows function to analyse separate subsets/parts of the time series
+
+window_1 <- ymd("1996-05-02")
+window_1_ts <- window(dataset$ts_imp, start=1996, end=decimal_date(window_1))
+plot(window_1_ts, type = "b")
+kpss.test(window_1_ts)
+adf.test(window_1_ts)
+pp.test(window_1_ts)
+
+#trend tests
+length(window_1_ts)
+SeasonalMannKendall(as.ts(dataset$values_imp[1:46]))
+cox.stuart.test(window_1_ts)
+
+```
+
+```{r}
+window_2 <- ymd("1996-6-28")
+window_2_ts <- window(dataset$ts_imp, start=decimal_date(window_1), end=decimal_date(window_2))
+plot(window_2_ts, type = "b")
+kpss.test(window_2_ts)
+adf.test(window_2_ts)
+pp.test(window_2_ts)
+#seasplot(window_2_ts, m=57)
+
+#trend tests
+length(window_2_ts)
+SeasonalMannKendall(as.ts(dataset$values_imp[47:103]))
+cox.stuart.test(window_2_ts)
+
+```
+
+```{r}
+window_3_ts <- window(dataset$ts_imp, start=decimal_date(window_2))
+plot(window_3_ts, type = "b")
+kpss.test(window_3_ts)
+adf.test(window_3_ts)
+pp.test(window_3_ts)
+
+
+#trend tests
+length(window_3_ts)
+SeasonalMannKendall(as.ts(dataset$values_imp[104:195]))
+cox.stuart.test(window_3_ts)
+
+```
+
+
+
+```{r}
+#Calculating cma , quad trend and moving average 
+cma_30 <- cmav(dataset$ts_imp, ma = 30, fill=TRUE)
+
+# Fit quadratic trend 
+data_quad <- tslm(dataset$ts_imp ~ trend + I(trend^2))
+
+# Moving average with a window size of 7
+data_ma7 <- ma(dataset$ts_imp, order=7)
+
+# Bind together the data and fitted trends 
+daily.ts_with_fits <- cbind(dataset$ts_imp, 
+                              Cma30 = cma_30,
+                             Quadratic_trend = fitted(data_quad),
+                             Moving_avg7 = data_ma7)
+```
+
+```{r}
+
+#Plotting the trend lines 
+autoplot(daily.ts_with_fits) + 
+  guides(colour= guide_legend(title = "Data series")) + 
+  scale_colour_manual(values=c("black","red","blue","yellow"))+theme(legend.position = "top")
+```
+
+
+```{r}
+#Combing the residulas together
+data_resids<-cbind(Res_orig=dataset$ts_imp-mean(dataset$ts_imp),
+                        Res_cma30=dataset$ts_imp-cma_30,
+                        Res_quad=dataset$ts_imp-fitted(data_quad), 
+                        Res_MA7 = dataset$ts_imp - data_ma7)
+
+#produce the autoplot 
+ autoplot(data_resids, facet=TRUE) + xlab("Year") + ylab("Residuals") +  
+  geom_hline(yintercept = 0) + 
+  guides(colour=guide_legend(title="Data Series"))
+```
+
+
+```{r}
+#Removing Trend
+#seasonal component * noise component = Time series value / trend component
+data_reminder <- dataset$ts_imp / cma_30
+
+# Plot Res_cma30 as a line plot with points
+plot(data_reminder, xlab = "Year", ylab = "Residuals", 
+     main = "sesonality and noise component")
+
+# Add a horizontal line at y = 0
+abline(h = 0, col = "red")
+
+#Statistical test for remainders
+kpss.test(data_reminder)
+adf.test(data_reminder)
+pp.test(data_reminder)
+plot(data_reminder, type = "b")
+```
+
+
+```{r}
+#Removing seasonality
+detrended <- data_reminder / remainder
+
+plot.ts(detrended, 
+        main = 'Seasonal variability',
+        cex.main = 0.85)
+
+#Statistical test after remvoing seasonality 
+kpss.test(detrended)
+adf.test(detrended)
+plot(detrended)
+tsdisplay(detrended)
+```
+
+
+```{r}
+#decompositon 
+#using decomp
+decom_data <- decomp(dataset$values_imp, m = 7, decomposition = "multiplicative", outplot = TRUE)
+plot(decom_data)
+
+#using decompose 
+plot(decompose(dataset$ts_imp, type = "multiplicative"))
+
+#using stl log 
+decomp_multi <- stl(log(dataset$ts_imp), s.window = 7)
+plot(decomp_multi)
+trend <- 2.718^(decomp_multi$time.series[, "trend"])
+seasonal <- 2.718^(decomp_multi$time.series[, "seasonal"])
+remainder <- 2.718^(decomp_multi$time.series[, "remainder"])
+
+tsdisplay(remainder)
+```
+
+
+
+```{r}
+#Difference with lag 1 and 7 
+
+diff_new <- diff(diff(dataset$ts_imp, lag = 1), lag = 7)
+tsdisplay(diff_new)
+
+```
+
+
+```{r}
+#Irregular Component
+plot(diff_new, 
+     main = "Time Series 'NN5-027'")
+ 
+#Find top 5 negative and positive differences
+match= match(sort(diff(diff_new))[1:5],diff(diff_new))
+match2 = match(sort(diff(diff_new),decreasing = TRUE)[1:5],diff(diff_new))
+ 
+circle1 = xts(diff_new[match[1]+1],as.Date(index(diff_new)[match[1]+1]))
+points(circle1,col='red',cex=4)
+circle2 = xts(diff_new[match[2]+1],as.Date(index(diff_new)[match[2]+1]))
+points(circle2,col='red',cex=4)
+circle3 = xts(diff_new[match2[1]+1],as.Date(index(diff_new)[match2[1]+1]))
+points(circle3,col='red',cex=4)
+circle4 = xts(diff_new[match2[2]+1],as.Date(index(diff_new)[match2[2]+1]))
+points(circle4,col='red',cex=4)
+ 
+#Figure 3.8
+irreg = remainder
+par(mfrow = c(2, 2))
+plot(remainder, main="Irregular Component",ylab="Irregular")
+boxplot(irreg)
+qqnorm(irreg, pch = 1, frame = FALSE)
+qqline(irreg, col = "red", lwd = 2)
+acf(irreg,main='Irregular component ACF')
+kpss.test(irreg)
+adf.test(irreg)
+checkresiduals(irreg)
+shapiro.test(irreg)
+```
+
+```{r}
+#Checking residuals and shapiro test 
+checkresiduals(remainder)
+shapiro.test(remainder)
+```
+
+
+
+```{r}
+#Statistical test for irregular component 
+acf(irreg,main='Irregular component ACF')
+kpss.test(irreg)
+adf.test(irreg)
+```
+
+```{r}
+#analyis the summary 
+tsoutliers(dataset$ts_imp)
+summary(dataset$ts_imp)
+```
+
+```{r}
+#IQR to calcualte the outliers 
+Tmin = 6.094-(1.5*IQR(dataset$ts_imp))
+Tmax = 10.757 +(1.5*IQR(dataset$ts_imp))
+dataset$ts_imp[which(dataset$ts_imp < Tmin | dataset$ts_imp > Tmax)]
+
+```
+```{r}
+#Grubbs test , histogram and boxplots
+grubbs.test(irreg,type=11)
+
+
+hist(diff(dataset$values_imp),main = "Differenced histogram",xlab="y(t)-y(t-1)")
+
+boxplot(dataset$ts_imp)
+boxplot(window_1_ts)
+boxplot(window_2_ts)
+boxplot(window_3_ts)
+
+tsoutliers(dataset$ts_imp)
+```
+
+```{r}
+#Fitting ARIMA model
+fit1 = Arima(ts20,order=c(1,2,1),seasonal=c(0,1,1))
+par(mfrow=c(1,2))
+acf(residuals(fit1),lag=20, main="Residuals")
+pacf(residuals(fit1),lag=20,main="Residuals")
+
+```
+
+
+###########################################################
+2nd assingment
+```{r}
+D32
+```
+
+
+
+```{r}
+summary(lm_1)
+```
+
+```{r}
+ggplot(data = data.table(Fitted_values = lm_1$fitted.values,
+                         Residuals = lm_1$residuals),
+       aes(Fitted_values, Residuals)) +
+  geom_point(size = 1.7) +
+  geom_smooth() +
+  geom_hline(yintercept = 0, color = "red", size = 1) +
+  labs(title = "Fitted values vs Residuals")
+```
+
+```{r}
+lm_1 = lm(ts_imp ~ 1 + ,
+             data = data)
+```
+
+```{r}
+ggplot(dataset$ts_imp,aes(date)) +
+  geom_line() +
+  theme(panel.border = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.minor = element_line(colour = "grey90"),
+        panel.grid.major = element_line(colour = "grey90"),
+        panel.grid.major.x = element_line(colour = "grey90"),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12, face = "bold")) +
+  labs(x = "Date", y = "Load (kW)")
+```
+
+
+
+
+

@@ -1,0 +1,604 @@
+---
+title: "forecastinf2"
+author: '36226843'
+date: "2023-04-17"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(vars)
+library(forecast)
+library(imputeTS)
+library(tseries)
+library(lubridate)
+library(outliers)
+library(ggplot2)
+library(dplyr)
+library(zoo)
+library(seasonal)
+library(tsutils)
+library(xts)
+library(Kendall)
+library(smooth)
+library(data.table)
+library(forecast)
+library(smooth)
+library(tsutils)
+library(tseries)
+library(fpp)
+```
+
+```{r}
+D32  <- read.csv("forecasting_data.csv")#load D476 with only 1 value column
+D32$date <-seq(as.Date("1996-03-18"), as.Date("1998-03-22"), by=1) #add date column
+D32 <- D32[,c("date", "y")] #rearrange the order of the 2 columns
+#series32 <- ts(D32[,2],start = c(1996, as.numeric(as.Date("1996-03-18") - as.Date("1998-03-22"))),frequency = 365.25)
+series32 <- ts(D32[,2],frequency = 7,start = c(1996, 77))
+
+#Imputing the missing values 
+values_imp <- na_interpolation(D32$y,option = "linear")
+D32$values_imp <- na_interpolation(series32,option = "linear")
+```
+
+```{r}
+plot(values_imp, main = "Line graph of Series 27 - NN27", xlab = "Year", ylab = "Value")
+```
+```{r}
+decomp(values_imp, decomposition="additive", outplot=TRUE)
+```
+```{r}
+decomp(values_imp, decomposition="multiplicative", outplot=TRUE)
+```
+
+
+
+```{r}
+# split time series
+ts_length <- length(values_imp)
+# split 70-30 
+train_length <- ts_length * 0.8
+train <- ts(ts_data[1:train_length], frequency = 7)
+test <- ts(ts_data[(train_length+1):ts_length], frequency = 7)
+
+train <- ts(window(values_imp, start = c(1, 1), end = c(85, 0)), frequency = 7, start = c(1,1), end = c(85, 0))
+length(train)
+test <- ts(window(values_imp, start = c(85, 0)), frequency = 7)
+
+length(test)
+# check length 
+length(train)
+length(test)
+```
+
+```{r}
+values_imp_length <- length(values_imp)
+# Write down size of training set
+train_length <- ts_length * 0.8
+# And the forecasting horizon
+h <- 14
+# Create the training set
+train <- ts(values_imp[1:train_length], frequency=365)
+# Create the test set
+test <- ts(values_imp[(train_length+1):values_imp_length],frequency=365)
+
+train <- ts(values_imp[1:train_length], frequency = 365, start = c(start(values_imp)[1],start(values_imp)[2]))
+end(train)
+test <- ts(values_imp[(train_length+1):values_imp_length], frequency = 365, start = c(end(train)[1],end(train)[2]))
+length(test)
+length(train)
+
+```
+
+
+
+```{r}
+NN27 <- read.csv('forecasting_data.csv',header=T)
+NN27$value <- na_interpolation(data$y,option = "linear")
+
+
+# create ts object
+values27 <- ts(NN27$value, frequency = 7,start = c(1996, as.numeric(as.Date("1996-03-18") - as.Date("1998-03-22"))))
+
+
+#Imputing the missing values 
+values_imp <- na_interpolation(values27,option = "linear")
+values_imp_ts <- ts(na_interpolation(values27,option = "linear"))
+#D32$values_imp <- na_interpolation(series32,option = "linear")
+
+plot(values_imp, main = "Line graph of Series 27 - NN27", xlab = "Year", ylab = "Value")
+```
+
+```{r}
+values_imp <- ts(values_imp, frequency = 7, start = c(1, 0), end = c(105, 6))
+length(values_imp)
+
+# split time series
+values_length <- length(values_imp)
+# split 80-20, so 588-147 (total length = 735)
+train_length <- values_length * 0.8
+train <- ts(values_imp[1:train_length], frequency = 7)
+test <- ts(values_imp[(train_length+1):values_length], frequency = 7)
+
+train <- ts(window(values_imp, start = c(1, 0), end = c(85, 0)), frequency = 7, start = c(1, 1), end = c(85, 0))
+length(train)
+test <- ts(window(values_imp, start = c(85, 0)), frequency = 7, start = c(85, 0))
+length(test)
+# check length 
+length(train)
+length(test)
+
+
+```
+
+
+```{r}
+autoplot(train, series = "TRAIN" ,col ="blue") + autolayer(test,series = "TEST")
+```
+
+
+#Naive method 
+```{r}
+naive_method <- naive(train, h=h)
+naive_forecast <- naive_method$mean
+checkresiduals(naive_method)
+actual <- test[1:length(naive_forecast)]
+#***fix naive errors*****
+naive_errors = naive_forecast - actual
+autoplot(train,series = "train") + autolayer(naive_forecast,series = "Naive forecast")+labs(title = "Naive Forecast")
+
+
+residuals <- residuals(naive_method)
+shapiro.test(residuals)
+```
+```{r}
+##****according to this error looks multilpicative****###
+autoplot(train,series = "actual") + autolayer(naive_errors,series = "Naive errors")
+
+
+
+```
+
+```{r}
+SMA3_ME <- mean(naive_errors) 
+SMA3_ME
+
+SMA3_MSE <- mean(naive_errors ^ 2)
+SMA3_MSE
+
+SMA3_MAE <- mean(abs(naive_errors))
+SMA3_MAE
+
+SMA3_MAPE <- 100 * mean(abs(naive_errors)/test)
+SMA3_MAPE
+```
+
+
+#Seasonal Naive forecast
+```{r}
+snaive_method <- snaive(train, h=h)
+snaive_method
+checkresiduals(snaive_method)
+snaive_forecast <- snaive_method$mean
+sactual <- test[1:length(snaive_forecast)]
+snaive_errors = snaive_forecast - sactual
+
+SMA3_ME <- mean(snaive_errors) 
+SMA3_ME
+
+SMA3_MSE <- mean(snaive_errors ^ 2)
+SMA3_MSE
+
+SMA3_MAE <- mean(abs(snaive_errors))
+SMA3_MAE
+
+SMA3_MAPE <- 100 * mean(abs(snaive_errors)/test)
+SMA3_MAPE
+
+autoplot(train, series = "Train") + autolayer(snaive_forecast,series = "Seasonal Naive Foreacast")+labs(title = "Seasonal Naive Forecast")
+sresiduals <- residuals(snaive_method)
+shapiro.test(sresiduals)
+```
+
+
+#grid search to find optimal Alpha, beta and gamma value 
+```{r}
+
+ # Starting with a shallow search (sequence between 0 and 1 with jumps of 0.1)
+ # To speed up the process, will set the parallel option to TRUE 
+ # to run the search in parallel using 8 cores
+
+ hw_grid_shallow <- ts_grid(ts.obj = train,
+                            periods = 6,
+                            model = "HoltWinters",
+                            optim = "MAPE",
+                            window_space = 6,
+                            window_test = 12,
+                            hyper_params = list(alpha = seq(0.01, 1,0.1),
+                                                beta =  seq(0.0001, 1,0.001),
+                                                gamma = seq(0.0001, 1,0.001)),
+                            parallel = TRUE,
+                            n.cores = 8)
+
+
+ # Use the parameter range of the top 20 models 
+ # to set a narrow but more agressive search
+
+ a_min <- min(hw_grid_shallow$grid_df$alpha[1:20])
+ a_max <- max(hw_grid_shallow$grid_df$alpha[1:20])
+
+ b_min <- min(hw_grid_shallow$grid_df$beta[1:20])
+ b_max <- max(hw_grid_shallow$grid_df$beta[1:20])
+
+ g_min <- min(hw_grid_shallow$grid_df$gamma[1:20])
+ g_max <- max(hw_grid_shallow$grid_df$gamma[1:20])
+
+ hw_grid_second <- ts_grid(ts.obj = train,
+                           periods = 6,
+                           model = "HoltWinters",
+                           optim = "MAPE",
+                           window_space = 6,
+                           window_test = 12,
+                           hyper_params = list(alpha = seq(a_min, a_max,0.05),
+                                               beta =  seq(b_min, b_max,0.05),
+                                               gamma = seq(g_min, g_max,0.05)),
+                           parallel = TRUE,
+                           n.cores = 8)
+
+ md <- HoltWinters(train,
+                   alpha = hw_grid_second$alpha,
+                   beta = hw_grid_second$beta,
+                   gamma = hw_grid_second$gamma)
+print(hw_grid_second$alpha)
+print(hw_grid_second$beta)
+print(hw_grid_second$gamma)
+ library(forecast)
+
+ fc <- forecast(md, h = 14)
+
+ plot_forecast(fc)
+
+# }
+ 
+ #alpha - 0.01
+ #beta - 0.0009
+ #gamma - 0.0009
+```
+```{r}
+plot(fc)
+```
+
+#To find optimal alpha beta and gamma
+```{r}
+# Load your data here and split it into training and validation sets
+
+# Define a grid for alpha beta and gamma 
+alpha <- seq(0.1, 0.8, by = 0.1)
+beta <- seq(0.1, 0.8, by = 0.1)
+gamma <- seq(0.1, 0.8, by = 0.1)
+
+# Create an empty matrix to store the forecast errors for each parameter combination
+error_matrix <- matrix(NA, nrow = length(alpha)*length(beta)*length(gamma), ncol = 4)
+colnames(error_matrix) <- c("alpha", "beta", "gamma", "error")
+
+# Loop over all possible parameter combinations 
+counter <- 1
+for (i in 1:length(alpha)) {
+  for (j in 1:length(beta)) {
+    for (k in 1:length(gamma)) {
+      print(alpha[i])
+      print(beta[j])
+      print(gamma[k])
+      es_model <- ets(train, model = "ZZZ", alpha = alpha[i], beta = beta[j], gamma = gamma[k])
+      if (class(es_model) == "try-error") {
+        cat("Model not fitted for alpha =", alpha[i], ", beta =", beta[j], ", gamma =", gamma[k], "\n")
+        error_matrix[counter, ] <- c(alpha[i], beta[j], gamma[k], NA)
+      } else {
+      forecast <- forecast(es_model, h = length(test))
+      error <- sqrt(mean((forecast$mean - test)^2))
+      error_matrix[counter, ] <- c(alpha[i], beta[j], gamma[k], error)
+      }
+      counter <- counter + 1
+    }
+  }
+}
+
+# Find the combination of parameters with the lowest forecast error
+min_error <- min(error_matrix[, "error"])
+optimal_params <- error_matrix[which.min(error_matrix[, "error"]), c("alpha", "beta", "gamma")]
+
+# Refit the model using the optimal parameters and generate forecasts
+final_model <- ets(data, model = "MAM", alpha = optimal_params[1], beta = optimal_params[2], gamma = optimal_params[3])
+final_forecast <- forecast(final_model, h = num_periods_to_forecast)
+
+```
+
+
+
+```{r}
+#ETS_ANN_0.15 <- ets(train, model="ZZZ", alpha=0.15,restrict = FALSE)
+#ETS_ANN_0.15
+
+# additive error, trend and seasonality
+#ets_3 <- ets(train, model = "AAA")
+#ets_f3 <- forecast(ets_3, h = 14)
+#accuracy(ets_f3, test)
+#summary(ets_3)
+
+
+# multiplicative error, additive trend and seasonality
+#ets_3 <- ets(train, model = "MAA")
+#ets_f3 <- forecast(ets_3, h = 14)
+#accuracy(ets_f3, test)
+#summary(ets_3)
+
+# multiplicative error, additive trend and seasonality
+ets_3 <- ets(train, model = "MAM", alpha = 0.01, beta = 0.0009, gamma = 0.0009)
+ets_f3 <- forecast(ets_3, h = 14)
+accuracy(ets_f3, test)
+summary(ets_3)
+
+# Multiplicative error and additive trend and multiplicative seasonality
+#ets_3 <- ets(train, model = "AAM", restrict = FALSE)
+#ets_f3 <- forecast(ets_3, h = 14)
+#accuracy(ets_f3, test)
+#summary(ets_3)
+
+
+# multiplicative error, additive trend, and multiplicative seasonality
+#ets_3 <- ets(train, model = "MAM")
+#ets_f3 <- forecast(ets_3, h = 14)
+#accuracy(ets_f3, test)
+#summary(ets_3)
+
+# multiplicative error, Multiplicative trend, and multiplicative seasonality
+#ets_3 <- ets(train, model = "MMM")
+#ets_f3 <- forecast(ets_3, h = 14)
+#accuracy(ets_f3, test)
+#summary(ets_3)
+
+#default
+#qcement.hw6 <- ets(train, model = "ZZZ")
+#summary(qcement.hw6)
+
+#minimum RMSE, AIC, and BIC compare with all three
+```
+
+
+```{r}
+#persistence <- list(alpha = 0.0633, beta = 0.03, gamma = 0.03)
+#fit <- es(train, model =  "MMM",persistence = persistence)
+fit <- es(train, model =  "MMA")
+auto_forecast <- forecast(fit, h=14)
+checkresiduals(fit)
+plot(auto_forecast)
+lines(train, col = "red")
+#es(train, model = "MAN")
+
+
+residuals <- residuals(fit)
+shapiro.test(residuals)
+```
+
+
+```{r}
+#empty dataframe table
+es_results <- data.frame()
+#Models you want to check in between
+models <- c("MAN","ANN", "AAN", "MNN","MMN","MMM", "MAM", "MAA")
+#Looping through data to fit into training data
+for (i in 1:length(models)) {
+# Fit model to training data
+#fit <- es(train,model = models[i])
+persistence <- list(alpha = 0.0633, beta = 0.03, gamma = 0.03)
+fit <- es(train, model =  models[i],persistence = persistence, damped = FALSE)
+#fit <- ets(train, model = models[i] , alpha = 0.01, beta = 0.0009, gamma = 0.0009)
+# Make predictions on test data
+pred <- forecast(fit, h = h)$mean
+error = pred - test
+far2 <- function(x, h, model){
+  fit <- ets(x, model=models[i])
+  forecast(fit, h=h)
+  }
+e <- forecast::tsCV(train, far2, h=14, model=fit)
+
+# Calculate evaluation metrics
+mape <- mean(abs(error / test)) * 100
+rmse <- sqrt(mean(error^2))
+mae <- mean(abs(error))
+tscv_rmse <- sqrt(mean(e^2, na.rm=TRUE))
+tscv_mae <- mean(abs(e), na.rm=TRUE)
+#AIC = fit$aic
+#BIC = fit$bic
+AIC <- AICc(fit)
+BIC <- BIC(fit)
+# Store results in dataframe
+es_results <- rbind(es_results, data.frame(model = models[i], rmse = rmse, mape = mape, mae = mae, AIC = AIC , BIC = BIC,tscv_RMSE = tscv_rmse , tscv_MAE = tscv_mae, damped= FALSE))
+}
+```
+
+
+```{r}
+es_residuals <- residuals(Maa_f)
+checkresiduals(es_residuals)
+```
+
+#Damped ETS
+```{r}
+es_results_damp <- data.frame()
+# Define the possible models to test
+models <- c("MAN", "AAN","MMN","MMM", "MAM", "MAA")
+# Loop through each model and fit to training data
+for (i in 1:length(models)) {
+# Fit model to training data
+persistence <- list(alpha = 0.3, beta = 0.03, gamma = 0.03)
+fit <- es(train, model =  models[i],persistence = persistence,damped = TRUE)
+#fit <- es(train,model = models[i], damped = TRUE)
+# Make predictions on test data
+pred <- forecast(fit, h = h)
+far2 <- function(x, h, model){
+  fit <- ets(x, model=models[i])
+  forecast(fit, h=h)
+  }
+e <- forecast::tsCV(train, far2, h=14, model=fit)
+
+
+# Calculate evaluation metrics
+rmse <- sqrt(mean((test - pred$mean)^2))
+mape <- mean(abs((test - pred$mean) / test)) * 100
+mae <- mean(abs(test - pred$mean))
+AIC <- AICc(fit)
+BIC <- BIC(fit)
+#Store results in dataframe
+es_results_damp <- rbind(es_results, data.frame(model = models[i], rmse = rmse, mape = mape, mae = mae, AIC = AIC , BIC = BIC,tscv_RMSE = tscv_rmse , tscv_MAE = tscv_mae, damped= TRUE))
+}
+
+```
+
+#Comparing both results
+```{r}
+results_df_combined = rbind(es_results, es_results_damp)
+#sort dataset
+results_df_combined <- results_df_combined %>%
+arrange(rmse)
+#compare rmse and bic 
+```
+
+```{r}
+persistence <- list(alpha = 0.3, beta = 0.03, gamma = 0.03)
+fit <- es(train, model =  "AAN",persistence = persistence)
+
+```
+
+```{r}
+AIC(es_method)
+BIC(es_method)
+```
+
+#Auto ES forecast 
+```{r}
+es_method <- es(train,model="ZZZ")
+checkresiduals(es_method) 
+auto_forecast <- forecast(es_method, h=h)
+es_forecast <- forecast(es_method, h=h)$mean
+es_errors = es_forecast - test
+cat("ES Auto AAN\n","ME", mean(es_errors), "\nRMSE", sqrt(mean(es_errors^2)), "\nMAE", mean(abs(es_errors)), "\nMAPE", 100*mean(abs(es_errors)/test))
+
+
+plot(auto_forecast)
+lines(train, col = "red")
+
+```
+#Manual Es 
+```{r}
+persistence <- list(alpha = 0.0633, beta = 0.03, gamma = 0.03)
+manual_fit <- es(train, model =  "MNN", persistence = persistence,damped= TRUE , additive.only= FALSE)
+#manual_fit <- ets(train, model = "MNN" , alpha = 0.01, beta = 0.0009, gamma = 0.0009)
+manual_fit_plot <- forecast(manual_fit, h = h)
+manual_fit_forecast <- forecast(manual_fit, h = h)$mean
+plot(manual_fit_plot)
+#checkresiduals(manual_fit) #This is used to check any residuals in the data
+accuracy(manual_fit_plot,train)
+
+accuracy(manual_fit_plot, test)
+#manual_es_errors = manual_fit - test
+#cat("Manual ES\n","ME", mean(manual_es_errors), "\nRMSE", sqrt(mean(manual_es_errors^2)), "\nMAE", mean(abs(manual_es_errors)), "\nMAPE", 100*mean(abs(manual_es_errors)/test))
+
+residuals <- residuals(manual_fit)
+shapiro.test(residuals)
+
+```
+
+```{r}
+AIC(manual_fit)
+```
+
+
+```{r}
+MARDF
+```
+
+```{r}
+checkresiduals(manual_fit)
+```
+
+
+#Arima 
+```{r}
+tsdisplay(diff(diff(values_imp, lag = 7)))
+```
+
+```{r}
+fit1 = Arima(values_imp,order=c(1,1,1),seasonal=c(0,1,0))
+par(mfrow=c(1,2))
+acf(residuals(fit1),lag=20, main="Residuals")
+pacf(residuals(fit1),lag=20,main="Residuals")
+```
+
+```{r}
+autoplot(forecast(fit1,h=14))
+```
+
+#auto arima 
+```{r}
+auto_model = auto.arima(values_imp)
+
+
+# model summary
+summary(auto_model)
+
+# forecasting
+forecast = predict(auto_model,14)
+
+autoplot(forecast(auto_model,h=14))
+```
+
+
+```{r}
+plot(forecast_mam)
+```
+#testing
+```{r}
+gamma <- seq(0.01, 0.85, 0.01)
+RMSE <- NA
+
+for(i in seq_along(gamma)) {
+  hw.expo <- ets(train, "AAA", gamma = gamma[i])
+  future <- forecast(hw.expo, h = 10)
+  RMSE[i] = accuracy(future, test)[2,2]
+}
+
+error <- data_frame(gamma, RMSE)
+minimum <- filter(error, RMSE == min(RMSE))
+ggplot(error, aes(gamma, RMSE)) +
+  geom_line() +
+  geom_point(data = minimum, color = "blue", size = 2) +
+  ggtitle("gamma's impact on forecast errors")
+```
+#testing
+```{r}
+ets_f3 <- forecast(ets_3, h = 10)
+accuracy(ets_f3, test)
+ets_f3.1 <- forecast(ets_3, h = 10,gamma=0.74)
+accuracy(ets_f3.1, test)
+
+autoplot(ets_f3.1)
+```
+
+#auto ets model
+```{r}
+
+fittrain <- ets(train, model="ZZZ")
+plot(forecast(fittrain,h = 14))
+```
+
+
